@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: cupcake --default, light, dark, synthwave, retro, cyberpunk, valentine, aqua, lofi, lemonade, night, coffee;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse at top left, color-mix(in oklab, var(--color-primary) 18%, transparent), transparent 50%),
+    radial-gradient(ellipse at bottom right, color-mix(in oklab, var(--color-secondary) 16%, transparent), transparent 55%);
+  background-attachment: fixed;
+}
