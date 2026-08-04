@@ -1,13 +1,20 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { LayoutDashboard, LogOut, Music2, PlusCircle } from "lucide-react";
+import {
+  LayoutDashboard,
+  Lightbulb,
+  LogOut,
+  Music2,
+  PlusCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ThemeSelector } from "./ThemeSelector";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/add", label: "Add Concert", icon: PlusCircle },
   { href: "/concerts", label: "My Concerts", icon: Music2 },
 ];

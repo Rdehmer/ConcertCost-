@@ -27,6 +27,15 @@ export function getFunPointsPer100(
   return (funRating / totalCost) * 100;
 }
 
+/** Dollars spent per fun point — lower means better value. */
+export function getCostPerFunPoint(
+  totalCost: number,
+  funRating: number
+): number | null {
+  if (funRating <= 0) return null;
+  return totalCost / funRating;
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -57,12 +66,52 @@ export function getCategoryTotals(concerts: Concert[]) {
 
 export function enrichConcert(concert: Concert) {
   const totalCost = getTotalCost(concert);
+  const funRating = toNumber(concert.fun_rating);
   const costPerHour = getCostPerHour(totalCost, toNumber(concert.hours_at_event));
-  const funPointsPer100 = getFunPointsPer100(
-    toNumber(concert.fun_rating),
-    totalCost
-  );
-  return { ...concert, totalCost, costPerHour, funPointsPer100 };
+  const funPointsPer100 = getFunPointsPer100(funRating, totalCost);
+  const costPerFunPoint = getCostPerFunPoint(totalCost, funRating);
+  return {
+    ...concert,
+    totalCost,
+    costPerHour,
+    funPointsPer100,
+    costPerFunPoint,
+  };
+}
+
+/** Best value first: lowest cost per fun point. */
+export function getValueLeaderboard(concerts: Concert[]) {
+  return concerts
+    .map(enrichConcert)
+    .filter((c) => c.costPerFunPoint !== null)
+    .sort((a, b) => (a.costPerFunPoint ?? 0) - (b.costPerFunPoint ?? 0));
+}
+
+/** Spending totals grouped by calendar month (YYYY-MM). */
+export function getSpendingByMonth(concerts: Concert[]) {
+  const buckets = new Map<string, number>();
+
+  for (const concert of concerts) {
+    const enriched = enrichConcert(concert);
+    const date = concert.concert_date?.slice(0, 7);
+    if (!date) continue;
+    buckets.set(date, (buckets.get(date) ?? 0) + enriched.totalCost);
+  }
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, total]) => {
+      const [year, mon] = month.split("-");
+      const label = new Date(Number(year), Number(mon) - 1, 1).toLocaleDateString(
+        undefined,
+        { month: "short", year: "numeric" }
+      );
+      return {
+        month,
+        label,
+        total: Number(total.toFixed(2)),
+      };
+    });
 }
 
 export function computeDashboardStats(concerts: Concert[]) {
