@@ -7,6 +7,7 @@ import {
   LogOut,
   Music2,
   PlusCircle,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -15,6 +16,7 @@ import { ThemeSelector } from "./ThemeSelector";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/insights", label: "Insights", icon: Lightbulb },
+  { href: "/recap", label: "Recap", icon: Sparkles },
   { href: "/add", label: "Add Concert", icon: PlusCircle },
   { href: "/concerts", label: "My Concerts", icon: Music2 },
 ];

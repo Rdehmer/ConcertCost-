@@ -1,16 +1,21 @@
 "use client";
 
 import { CostBreakdown } from "@/components/CostBreakdown";
+import { ShareRecapModal } from "@/components/recap/ShareRecapModal";
 import {
   enrichConcert,
   formatCurrency,
   formatMetric,
 } from "@/lib/calculations";
 import type { Concert } from "@/lib/types";
-import { MapPin, Pencil, Sparkles } from "lucide-react";
+import type { EnrichedConcert } from "@/lib/year-recap";
+import { MapPin, Pencil, Share2, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 export function ConcertList({ concerts }: { concerts: Concert[] }) {
+  const [shareConcert, setShareConcert] = useState<EnrichedConcert | null>(null);
+
   if (concerts.length === 0) {
     return (
       <div className="card bg-base-100 shadow-md border border-dashed border-base-300">
@@ -75,6 +80,14 @@ export function ConcertList({ concerts }: { concerts: Concert[] }) {
                     <div className="stat-title text-xs">Fun</div>
                     <div className="stat-value text-lg">{m.fun_rating}/10</div>
                   </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm gap-1"
+                    onClick={() => setShareConcert(m)}
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share
+                  </button>
                   <Link
                     href={`/concerts/${concert.id}/edit`}
                     className="btn btn-ghost btn-sm gap-1"
@@ -120,6 +133,15 @@ export function ConcertList({ concerts }: { concerts: Concert[] }) {
           </article>
         );
       })}
+
+      {shareConcert ? (
+        <ShareRecapModal
+          kind="concert"
+          concert={shareConcert}
+          open
+          onClose={() => setShareConcert(null)}
+        />
+      ) : null}
     </div>
   );
 }
