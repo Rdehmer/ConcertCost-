@@ -1,13 +1,13 @@
 "use client";
 
+import { CostBreakdown } from "@/components/CostBreakdown";
 import {
   enrichConcert,
   formatCurrency,
   formatMetric,
 } from "@/lib/calculations";
 import type { Concert } from "@/lib/types";
-import { COST_FIELDS } from "@/lib/types";
-import { MapPin, Sparkles } from "lucide-react";
+import { MapPin, Pencil, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 export function ConcertList({ concerts }: { concerts: Concert[] }) {
@@ -38,13 +38,6 @@ export function ConcertList({ concerts }: { concerts: Concert[] }) {
     <div className="space-y-4">
       {sorted.map((concert) => {
         const m = enrichConcert(concert);
-        const topCosts = COST_FIELDS.map((f) => ({
-          label: f.label,
-          amount: Number(concert[f.key]) || 0,
-        }))
-          .filter((c) => c.amount > 0)
-          .sort((a, b) => b.amount - a.amount)
-          .slice(0, 4);
 
         return (
           <article
@@ -61,18 +54,17 @@ export function ConcertList({ concerts }: { concerts: Concert[] }) {
                     {concert.venue} · {concert.city}, {concert.state}
                   </p>
                   <p className="text-sm opacity-60 mt-1">
-                    {new Date(concert.concert_date + "T00:00:00").toLocaleDateString(
-                      undefined,
-                      {
-                        weekday: "short",
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      }
-                    )}
+                    {new Date(
+                      concert.concert_date + "T00:00:00"
+                    ).toLocaleDateString(undefined, {
+                      weekday: "short",
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 items-start">
                   <div className="stat bg-primary/10 rounded-box py-2 px-3 min-w-[7rem]">
                     <div className="stat-title text-xs">Total</div>
                     <div className="stat-value text-lg text-primary">
@@ -83,40 +75,38 @@ export function ConcertList({ concerts }: { concerts: Concert[] }) {
                     <div className="stat-title text-xs">Fun</div>
                     <div className="stat-value text-lg">{m.fun_rating}/10</div>
                   </div>
+                  <Link
+                    href={`/concerts/${concert.id}/edit`}
+                    className="btn btn-ghost btn-sm gap-1"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Link>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-box bg-base-200/70 p-3">
-                  <p className="text-xs opacity-60">Cost per hour</p>
-                  <p className="font-semibold">
-                    {m.costPerHour === null
-                      ? "—"
-                      : formatCurrency(m.costPerHour)}
-                  </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-box bg-base-200/70 p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs opacity-60">Cost per hour</p>
+                      <p className="font-semibold">
+                        {m.costPerHour === null
+                          ? "—"
+                          : formatCurrency(m.costPerHour)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs opacity-60">Fun Points per $100</p>
+                      <p className="font-semibold">
+                        {formatMetric(m.funPointsPer100, 2)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 <div className="rounded-box bg-base-200/70 p-3">
-                  <p className="text-xs opacity-60">Fun Points per $100</p>
-                  <p className="font-semibold">
-                    {formatMetric(m.funPointsPer100, 2)}
-                  </p>
-                </div>
-                <div className="rounded-box bg-base-200/70 p-3 col-span-2">
-                  <p className="text-xs opacity-60 mb-1">Main cost categories</p>
-                  {topCosts.length === 0 ? (
-                    <p className="text-sm">No costs entered</p>
-                  ) : (
-                    <ul className="text-sm space-y-0.5">
-                      {topCosts.map((c) => (
-                        <li key={c.label} className="flex justify-between gap-2">
-                          <span>{c.label}</span>
-                          <span className="font-medium">
-                            {formatCurrency(c.amount)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <p className="text-xs opacity-60 mb-2">Where the money went</p>
+                  <CostBreakdown breakdown={m.breakdown} />
                 </div>
               </div>
 

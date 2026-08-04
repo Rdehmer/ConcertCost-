@@ -1,13 +1,63 @@
-import type { Concert, CostCategoryKey } from "./types";
-import { COST_FIELDS } from "./types";
+import type { Concert, ConcertCostItem, CostCategory } from "./types";
+import { LEGACY_COST_FIELDS } from "./types";
 
 export function toNumber(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
 }
 
-export function getTotalCost(concert: Pick<Concert, CostCategoryKey>): number {
-  return COST_FIELDS.reduce((sum, field) => sum + toNumber(concert[field.key]), 0);
+/**
+ * Resolve line items for a concert.
+ * Prefer concert_cost_items; fall back to legacy fixed columns as Uncategorized/Other.
+ */
+export function getConcertCostItems(concert: Concert): ConcertCostItem[] {
+  const items = concert.cost_items ?? [];
+  if (items.length > 0) {
+    return [...items]
+      .map((item) => ({
+        ...item,
+        amount: toNumber(item.amount),
+      }))
+      .sort((a, b) => a.sort_order - b.sort_order);
+  }
+
+  const legacyItems: ConcertCostItem[] = [];
+  let order = 0;
+  for (const field of LEGACY_COST_FIELDS) {
+    const amount = toNumber(concert[field.key]);
+    if (amount > 0) {
+      legacyItems.push({
+        id: `legacy-${field.key}`,
+        concert_id: concert.id,
+        category: field.category,
+        amount,
+        sort_order: order++,
+      });
+    }
+  }
+
+  if (legacyItems.length > 0) return legacyItems;
+
+  // True single-total / empty legacy row: treat as one Uncategorized item only if somehow needed
+  return [];
+}
+
+export function getTotalCost(concert: Concert): number {
+  const items = getConcertCostItems(concert);
+  if (items.length > 0) {
+    return items.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  }
+  // Final fallback: sum legacy columns even if all zero
+  return LEGACY_COST_FIELDS.reduce(
+    (sum, field) => sum + toNumber(concert[field.key]),
+    0
+  );
+}
+
+export function sumLineItemAmounts(
+  items: { amount: number | string }[]
+): number {
+  return items.reduce((sum, item) => sum + toNumber(item.amount), 0);
 }
 
 export function getCostPerHour(
@@ -56,11 +106,42 @@ export function formatMetric(value: number | null, digits = 1): string {
   return formatNumber(value, digits);
 }
 
+/** Aggregate spending by category across concerts. */
 export function getCategoryTotals(concerts: Concert[]) {
-  return COST_FIELDS.map((field) => ({
-    name: field.label,
-    key: field.key,
-    total: concerts.reduce((sum, c) => sum + toNumber(c[field.key]), 0),
+  const totals = new Map<string, number>();
+
+  for (const concert of concerts) {
+    for (const item of getConcertCostItems(concert)) {
+      const key = item.category || "Other";
+      totals.set(key, (totals.get(key) ?? 0) + toNumber(item.amount));
+    }
+  }
+
+  return [...totals.entries()]
+    .map(([name, total]) => ({ name, total }))
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Per-concert category breakdown with percentages. */
+export function getConcertCategoryBreakdown(concert: Concert) {
+  const items = getConcertCostItems(concert);
+  const byCategory = new Map<string, number>();
+
+  for (const item of items) {
+    const key = item.category || "Other";
+    byCategory.set(key, (byCategory.get(key) ?? 0) + toNumber(item.amount));
+  }
+
+  const rows = [...byCategory.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .filter((row) => row.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+
+  const total = rows.reduce((sum, row) => sum + row.amount, 0);
+
+  return rows.map((row) => ({
+    ...row,
+    percent: total > 0 ? (row.amount / total) * 100 : 0,
   }));
 }
 
@@ -70,12 +151,17 @@ export function enrichConcert(concert: Concert) {
   const costPerHour = getCostPerHour(totalCost, toNumber(concert.hours_at_event));
   const funPointsPer100 = getFunPointsPer100(funRating, totalCost);
   const costPerFunPoint = getCostPerFunPoint(totalCost, funRating);
+  const costItems = getConcertCostItems(concert);
+  const breakdown = getConcertCategoryBreakdown(concert);
+
   return {
     ...concert,
     totalCost,
     costPerHour,
     funPointsPer100,
     costPerFunPoint,
+    costItems,
+    breakdown,
   };
 }
 
@@ -102,10 +188,11 @@ export function getSpendingByMonth(concerts: Concert[]) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, total]) => {
       const [year, mon] = month.split("-");
-      const label = new Date(Number(year), Number(mon) - 1, 1).toLocaleDateString(
-        undefined,
-        { month: "short", year: "numeric" }
-      );
+      const label = new Date(
+        Number(year),
+        Number(mon) - 1,
+        1
+      ).toLocaleDateString(undefined, { month: "short", year: "numeric" });
       return {
         month,
         label,
@@ -162,5 +249,21 @@ export function computeDashboardStats(concerts: Concert[]) {
     mostExpensive,
     highestFun,
     categoryTotals: getCategoryTotals(concerts),
+  };
+}
+
+export type LineItemDraft = {
+  key: string;
+  category: CostCategory | string;
+  amount: string;
+};
+
+export function createEmptyLineItem(
+  category: CostCategory | string = "Ticket"
+): LineItemDraft {
+  return {
+    key: `new-${Math.random().toString(36).slice(2, 10)}`,
+    category,
+    amount: "",
   };
 }

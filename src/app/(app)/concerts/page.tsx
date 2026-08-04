@@ -1,12 +1,15 @@
 import { ConcertList } from "@/components/ConcertList";
+import {
+  CONCERT_WITH_COSTS_SELECT,
+  normalizeConcerts,
+} from "@/lib/concerts";
 import { createClient } from "@/lib/supabase/server";
-import type { Concert } from "@/lib/types";
 
 export default async function ConcertsPage() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("concerts")
-    .select("*")
+    .select(CONCERT_WITH_COSTS_SELECT)
     .order("concert_date", { ascending: false });
 
   if (error) {
@@ -25,7 +28,9 @@ export default async function ConcertsPage() {
           Every show you&apos;ve logged - only visible to you.
         </p>
       </div>
-      <ConcertList concerts={(data ?? []) as Concert[]} />
+      <ConcertList
+        concerts={normalizeConcerts(data as Record<string, unknown>[] | null)}
+      />
     </div>
   );
 }

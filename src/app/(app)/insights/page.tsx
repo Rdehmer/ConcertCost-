@@ -1,12 +1,15 @@
 import { InsightsView } from "@/components/InsightsView";
+import {
+  CONCERT_WITH_COSTS_SELECT,
+  normalizeConcerts,
+} from "@/lib/concerts";
 import { createClient } from "@/lib/supabase/server";
-import type { Concert } from "@/lib/types";
 
 export default async function InsightsPage() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("concerts")
-    .select("*")
+    .select(CONCERT_WITH_COSTS_SELECT)
     .order("concert_date", { ascending: false });
 
   if (error) {
@@ -25,7 +28,9 @@ export default async function InsightsPage() {
           See which shows gave you the most bang for your buck.
         </p>
       </div>
-      <InsightsView concerts={(data ?? []) as Concert[]} />
+      <InsightsView
+        concerts={normalizeConcerts(data as Record<string, unknown>[] | null)}
+      />
     </div>
   );
 }

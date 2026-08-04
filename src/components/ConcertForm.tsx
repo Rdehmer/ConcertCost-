@@ -1,16 +1,33 @@
 "use client";
 
 import {
+  createEmptyLineItem,
   formatCurrency,
-  getTotalCost,
+  sumLineItemAmounts,
   toNumber,
+  type LineItemDraft,
 } from "@/lib/calculations";
 import { createClient } from "@/lib/supabase/client";
-import { COST_FIELDS } from "@/lib/types";
-import { CheckCircle2 } from "lucide-react";
+import type { Concert, CostCategory } from "@/lib/types";
+import { COST_CATEGORIES } from "@/lib/types";
+import { CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 
-const emptyForm = {
+type FormState = {
+  concert_name: string;
+  artist: string;
+  venue: string;
+  city: string;
+  state: string;
+  concert_date: string;
+  distance_from_home: string;
+  hours_at_event: string;
+  fun_rating: string;
+  notes: string;
+};
+
+const emptyDetails: FormState = {
   concert_name: "",
   artist: "",
   venue: "",
@@ -19,19 +36,9 @@ const emptyForm = {
   concert_date: "",
   distance_from_home: "",
   hours_at_event: "",
-  ticket_cost: "",
-  ticket_fees: "",
-  parking_cost: "",
-  food_drink_cost: "",
-  merchandise_cost: "",
-  lodging_cost: "",
-  travel_cost: "",
-  other_cost: "",
   fun_rating: "7",
   notes: "",
 };
-
-type FormState = typeof emptyForm;
 
 function FieldRow({
   label,
@@ -60,21 +67,90 @@ function FieldRow({
   );
 }
 
-export function ConcertForm() {
-  const [form, setForm] = useState<FormState>(emptyForm);
+function concertToForm(concert: Concert): {
+  details: FormState;
+  lineItems: LineItemDraft[];
+} {
+  const items =
+    concert.cost_items && concert.cost_items.length > 0
+      ? [...concert.cost_items]
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((item) => ({
+            key: item.id,
+            category: item.category,
+            amount: String(toNumber(item.amount) || ""),
+          }))
+      : [createEmptyLineItem("Ticket")];
+
+  return {
+    details: {
+      concert_name: concert.concert_name,
+      artist: concert.artist,
+      venue: concert.venue,
+      city: concert.city,
+      state: concert.state,
+      concert_date: concert.concert_date,
+      distance_from_home: String(concert.distance_from_home ?? ""),
+      hours_at_event: String(concert.hours_at_event ?? ""),
+      fun_rating: String(concert.fun_rating ?? 7),
+      notes: concert.notes ?? "",
+    },
+    lineItems: items,
+  };
+}
+
+export function ConcertForm({
+  mode = "create",
+  initialConcert,
+}: {
+  mode?: "create" | "edit";
+  initialConcert?: Concert;
+}) {
+  const router = useRouter();
+  const seeded =
+    mode === "edit" && initialConcert
+      ? concertToForm(initialConcert)
+      : { details: emptyDetails, lineItems: [createEmptyLineItem("Ticket")] };
+
+  const [form, setForm] = useState<FormState>(seeded.details);
+  const [lineItems, setLineItems] = useState<LineItemDraft[]>(seeded.lineItems);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const liveTotal = useMemo(() => {
-    const costs = Object.fromEntries(
-      COST_FIELDS.map((f) => [f.key, toNumber(form[f.key])])
-    ) as Record<(typeof COST_FIELDS)[number]["key"], number>;
-    return getTotalCost(costs);
-  }, [form]);
+  const liveTotal = useMemo(
+    () => sumLineItemAmounts(lineItems),
+    [lineItems]
+  );
 
   function update(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
+    setSuccess(false);
+  }
+
+  function updateLineItem(
+    key: string,
+    field: "category" | "amount",
+    value: string
+  ) {
+    setLineItems((prev) =>
+      prev.map((item) => (item.key === key ? { ...item, [field]: value } : item))
+    );
+    setSuccess(false);
+  }
+
+  function addLineItem() {
+    setLineItems((prev) => [...prev, createEmptyLineItem("Other")]);
+    setSuccess(false);
+  }
+
+  function removeLineItem(key: string) {
+    setLineItems((prev) => {
+      if (prev.length <= 1) {
+        return [{ ...prev[0], amount: "", category: "Ticket" }];
+      }
+      return prev.filter((item) => item.key !== key);
+    });
     setSuccess(false);
   }
 
@@ -95,8 +171,15 @@ export function ConcertForm() {
       return;
     }
 
-    const payload = {
-      user_id: user.id,
+    const cleanedItems = lineItems
+      .map((item, index) => ({
+        category: (item.category || "Other") as CostCategory,
+        amount: toNumber(item.amount),
+        sort_order: index,
+      }))
+      .filter((item) => item.amount > 0);
+
+    const concertPayload = {
       concert_name: form.concert_name.trim(),
       artist: form.artist.trim(),
       venue: form.venue.trim(),
@@ -105,29 +188,88 @@ export function ConcertForm() {
       concert_date: form.concert_date,
       distance_from_home: toNumber(form.distance_from_home),
       hours_at_event: toNumber(form.hours_at_event),
-      ticket_cost: toNumber(form.ticket_cost),
-      ticket_fees: toNumber(form.ticket_fees),
-      parking_cost: toNumber(form.parking_cost),
-      food_drink_cost: toNumber(form.food_drink_cost),
-      merchandise_cost: toNumber(form.merchandise_cost),
-      lodging_cost: toNumber(form.lodging_cost),
-      travel_cost: toNumber(form.travel_cost),
-      other_cost: toNumber(form.other_cost),
-      fun_rating: Math.min(10, Math.max(1, Math.round(toNumber(form.fun_rating)))),
+      fun_rating: Math.min(
+        10,
+        Math.max(1, Math.round(toNumber(form.fun_rating)))
+      ),
       notes: form.notes.trim() || null,
+      // Keep legacy columns at 0 so totals come from line items
+      ticket_cost: 0,
+      ticket_fees: 0,
+      parking_cost: 0,
+      food_drink_cost: 0,
+      merchandise_cost: 0,
+      lodging_cost: 0,
+      travel_cost: 0,
+      other_cost: 0,
     };
 
-    const { error: insertError } = await supabase
-      .from("concerts")
-      .insert(payload);
+    let concertId = initialConcert?.id;
 
-    if (insertError) {
-      setError(insertError.message);
-      setLoading(false);
+    if (mode === "edit" && concertId) {
+      const { error: updateError } = await supabase
+        .from("concerts")
+        .update(concertPayload)
+        .eq("id", concertId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setLoading(false);
+        return;
+      }
+
+      const { error: deleteError } = await supabase
+        .from("concert_cost_items")
+        .delete()
+        .eq("concert_id", concertId);
+
+      if (deleteError) {
+        setError(deleteError.message);
+        setLoading(false);
+        return;
+      }
+    } else {
+      const { data: inserted, error: insertError } = await supabase
+        .from("concerts")
+        .insert({ ...concertPayload, user_id: user.id })
+        .select("id")
+        .single();
+
+      if (insertError || !inserted) {
+        setError(insertError?.message ?? "Could not save concert.");
+        setLoading(false);
+        return;
+      }
+      concertId = inserted.id;
+    }
+
+    if (cleanedItems.length > 0 && concertId) {
+      const { error: itemsError } = await supabase
+        .from("concert_cost_items")
+        .insert(
+          cleanedItems.map((item) => ({
+            concert_id: concertId,
+            category: item.category,
+            amount: item.amount,
+            sort_order: item.sort_order,
+          }))
+        );
+
+      if (itemsError) {
+        setError(itemsError.message);
+        setLoading(false);
+        return;
+      }
+    }
+
+    if (mode === "edit") {
+      router.push("/concerts");
+      router.refresh();
       return;
     }
 
-    setForm(emptyForm);
+    setForm(emptyDetails);
+    setLineItems([createEmptyLineItem("Ticket")]);
     setSuccess(true);
     setLoading(false);
   }
@@ -248,7 +390,7 @@ export function ConcertForm() {
               className="textarea textarea-bordered w-full min-h-24"
               value={form.notes}
               onChange={(e) => update("notes", e.target.value)}
-              placeholder="Opening act, seats, weather, highlights…"
+              placeholder="Opening act, seats, weather, highlights..."
             />
           </FieldRow>
         </div>
@@ -258,9 +400,9 @@ export function ConcertForm() {
         <div className="card-body gap-4">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h2 className="card-title text-lg">Costs</h2>
+              <h2 className="card-title text-lg">Cost line items</h2>
               <p className="text-sm opacity-70">
-                Leave blank for $0. Total updates as you type.
+                Add as many categories as you need. Total updates as you type.
               </p>
             </div>
             <div className="stat bg-primary/10 rounded-box px-4 py-2">
@@ -271,23 +413,75 @@ export function ConcertForm() {
             </div>
           </div>
 
-          {COST_FIELDS.map((field) => (
-            <FieldRow key={field.key} label={field.label} htmlFor={field.key}>
-              <label className="input input-bordered flex items-center gap-2 w-full">
-                <span className="opacity-60">$</span>
-                <input
-                  id={field.key}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="grow"
-                  value={form[field.key]}
-                  onChange={(e) => update(field.key, e.target.value)}
-                  placeholder="0.00"
-                />
-              </label>
-            </FieldRow>
-          ))}
+          <div className="space-y-3">
+            {lineItems.map((item, index) => (
+              <div
+                key={item.key}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_8rem_auto] gap-2 items-end"
+              >
+                <div className="form-control">
+                  <label className="label py-1">
+                    <span className="label-text text-xs">Category</span>
+                  </label>
+                  <select
+                    className="select select-bordered w-full"
+                    value={item.category}
+                    onChange={(e) =>
+                      updateLineItem(item.key, "category", e.target.value)
+                    }
+                    aria-label={`Cost category ${index + 1}`}
+                  >
+                    {COST_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                    {item.category === "Uncategorized" ? (
+                      <option value="Uncategorized">Uncategorized</option>
+                    ) : null}
+                  </select>
+                </div>
+                <div className="form-control">
+                  <label className="label py-1">
+                    <span className="label-text text-xs">Amount</span>
+                  </label>
+                  <label className="input input-bordered flex items-center gap-2">
+                    <span className="opacity-60">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="grow"
+                      value={item.amount}
+                      onChange={(e) =>
+                        updateLineItem(item.key, "amount", e.target.value)
+                      }
+                      placeholder="0.00"
+                      aria-label={`Cost amount ${index + 1}`}
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-square text-error"
+                  onClick={() => removeLineItem(item.key)}
+                  aria-label={`Remove cost line ${index + 1}`}
+                  title="Remove"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-outline btn-sm gap-1 self-start"
+            onClick={addLineItem}
+          >
+            <Plus className="h-4 w-4" />
+            Add cost line
+          </button>
         </div>
       </section>
 
@@ -319,9 +513,26 @@ export function ConcertForm() {
         </div>
       </section>
 
-      <div className="flex justify-end">
-        <button type="submit" className="btn btn-primary btn-lg" disabled={loading}>
-          {loading ? "Saving…" : "Save concert"}
+      <div className="flex justify-end gap-2">
+        {mode === "edit" ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => router.push("/concerts")}
+          >
+            Cancel
+          </button>
+        ) : null}
+        <button
+          type="submit"
+          className="btn btn-primary btn-lg"
+          disabled={loading}
+        >
+          {loading
+            ? "Saving..."
+            : mode === "edit"
+              ? "Save changes"
+              : "Save concert"}
         </button>
       </div>
     </form>

@@ -1,12 +1,15 @@
 import { DashboardView } from "@/components/DashboardView";
+import {
+  CONCERT_WITH_COSTS_SELECT,
+  normalizeConcerts,
+} from "@/lib/concerts";
 import { createClient } from "@/lib/supabase/server";
-import type { Concert } from "@/lib/types";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("concerts")
-    .select("*")
+    .select(CONCERT_WITH_COSTS_SELECT)
     .order("concert_date", { ascending: false });
 
   if (error) {
@@ -25,7 +28,9 @@ export default async function DashboardPage() {
           Your spending and fun at a glance.
         </p>
       </div>
-      <DashboardView concerts={(data ?? []) as Concert[]} />
+      <DashboardView
+        concerts={normalizeConcerts(data as Record<string, unknown>[] | null)}
+      />
     </div>
   );
 }
